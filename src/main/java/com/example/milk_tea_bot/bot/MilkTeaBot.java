@@ -93,6 +93,10 @@ public class MilkTeaBot extends TelegramLongPollingBot {
 
             send(chatId, getMenuText());
 
+        }else if (text.startsWith("/ĐM")) {
+
+            handleReplaceItem(chatId, text);
+
         } else {
 
             handleAIOrder(chatId, text);
@@ -253,12 +257,48 @@ public class MilkTeaBot extends TelegramLongPollingBot {
         }
     }
 
+    private void sendOrderToMom(String text, AIOrderResponse order) {
+        SendMessage msg = new SendMessage();
+        msg.setChatId(MOM_CHAT_ID);
+        msg.setText(text);
+        msg.setParseMode("Markdown");
+
+        InlineKeyboardMarkup markup = new InlineKeyboardMarkup();
+        List<List<InlineKeyboardButton>> rows = new ArrayList<>();
+
+        // 1. Nút Nhận đơn và Hủy đơn (Dòng đầu tiên)
+        InlineKeyboardButton btnAccept = new InlineKeyboardButton();
+        btnAccept.setText("✅ Nhận đơn");
+        btnAccept.setCallbackData("MOM_ACCEPT_" + order.getOrders().get(0).getItem()); // Hoặc ID đơn hàng nếu có
+
+        InlineKeyboardButton btnReject = new InlineKeyboardButton();
+        btnReject.setText("🚫 Hủy đơn/Đóng cửa");
+        btnReject.setCallbackData("MOM_REJECT");
+
+        rows.add(Arrays.asList(btnAccept, btnReject));
+
+        // 2. Danh sách nút "Hết món" cho từng sản phẩm
+        for (AIOrderItem o : order.getOrders()) {
+            MenuItem item = menuService.find(o.getItem());
+            InlineKeyboardButton btnOut = new InlineKeyboardButton();
+            btnOut.setText("❌ Hết: " + (item != null ? item.getName() : o.getItem()));
+            btnOut.setCallbackData("OUT_OF_STOCK_" + o.getItem());
+            rows.add(Collections.singletonList(btnOut));
+        }
+
+        markup.setKeyboard(rows);
+        msg.setReplyMarkup(markup);
+
+        try {
+            execute(msg);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
     private void handleCallback(Long chatId, String data) {
-
+        // Luồng cho khách hàng xác nhận đơn
         if ("CONFIRM_YES".equals(data)) {
-
             AIOrderResponse order = pendingOrders.get(chatId);
-
             if (order != null) {
 
                 StringBuilder momMsg = new StringBuilder();
@@ -297,49 +337,145 @@ public class MilkTeaBot extends TelegramLongPollingBot {
                 sendOrderToMom(momMsg.toString(), order);
 
                 send(chatId,
-                        "✅ Em đã báo mẹ làm rồi ạ!");
+                        "✅ Em đã báo đơn cho mẹ rồi ạ!");
 
-                pendingOrders.remove(chatId);
+             //   pendingOrders.remove(chatId);
+            }
+        }
+
+        // Luồng cho Mẹ xử lý đơn
+        else if (data.startsWith("MOM_ACCEPT_")) {
+            // Mẹ nhấn Nhận đơn -> Báo cho khách (Lưu ý: Bạn cần lưu lại chatId của khách)
+            // Ở đây giả định bạn đang test gửi lại chính mình, nếu thực tế cần lấy từ Object Order
+            send(chatId, "🥰 Dạ mẹ em đã nhận đơn và đang làm rồi ạ! Anh/chị đợi xíu nhé.");
+        }
+
+        else if ("MOM_REJECT".equals(data)) {
+            // Mẹ nhấn Hủy đơn
+            send(chatId, "😭 Dạ em xin lỗi, hiện tại quán mẹ em đang bận hoặc đã đóng cửa nên không nhận đơn được ạ. Mong anh/chị thông cảm!");
+        }
+
+        else if (data.startsWith("OUT_OF_STOCK_")) {
+            String itemId = data.replace("OUT_OF_STOCK_", "");
+            MenuItem item = menuService.find(itemId);
+            String itemName = (item != null) ? item.getName() : itemId;
+
+            AIOrderResponse order = pendingOrders.get(chatId);
+
+            // Đánh dấu hoặc xóa món đã hết khỏi danh sách pending
+            if (order != null && order.getOrders() != null) {
+                order.getOrders().removeIf(o -> o.getItem().equals(itemId));
             }
 
-        } else if ("CONFIRM_NO".equals(data)) {
+            StringBuilder sb = new StringBuilder();
+            sb.append("😭 Dạ anh chị ơi, món *").append(itemName).append("* mẹ em vừa báo hết mất rồi ạ!\n");
 
-            send(chatId,
-                    "👍 Anh/chị chọn lại món giúp em nhé!");
+            InlineKeyboardMarkup markup = new InlineKeyboardMarkup();
+            List<List<InlineKeyboardButton>> rows = new ArrayList<>();
 
+            // Logic xử lý nút bấm thông minh
+            if (order != null && !order.getOrders().isEmpty()) {
+                // TRƯỜNG HỢP 1: CÒN MÓN KHÁC TRONG ĐƠN
+                sb.append("Anh chị muốn đổi món mới hay vẫn đặt các món còn lại ạ?");
+
+                InlineKeyboardButton btnChange = new InlineKeyboardButton("🔄 Đổi món khác");
+                btnChange.setCallbackData("CUST_CHANGE_ITEM");
+
+                InlineKeyboardButton btnKeep = new InlineKeyboardButton("🛒 Đặt món còn lại");
+                btnKeep.setCallbackData("CUST_KEEP_REST");
+
+                rows.add(Arrays.asList(btnChange, btnKeep));
+            } else {
+                // TRƯỜNG HỢP 2: HẾT SẠCH MÓN (Đơn ban đầu chỉ có 1 món)
+                sb.append("Vì đơn này chỉ có 1 món nên anh chị vui lòng đổi món khác hoặc chọn lại giúp con nhé!");
+
+                InlineKeyboardButton btnChange = new InlineKeyboardButton("🔄 Đổi món khác");
+                btnChange.setCallbackData("CUST_CHANGE_ITEM");
+                rows.add(Collections.singletonList(btnChange));
+            }
+
+            // Luôn có 2 nút này ở dưới
+            InlineKeyboardButton btnRestart = new InlineKeyboardButton("🆕 Chọn lại từ đầu");
+            btnRestart.setCallbackData("CUST_RESTART");
+
+            InlineKeyboardButton btnAbort = new InlineKeyboardButton("❌ Hủy đơn");
+            btnAbort.setCallbackData("CUST_ABORT");
+
+            rows.add(Arrays.asList(btnRestart, btnAbort));
+
+            markup.setKeyboard(rows);
+            sendWithMarkup(chatId, sb.toString(), markup);
+        }// Khách chọn đổi món
+        else if ("CUST_CHANGE_ITEM".equals(data)) {
+            send(chatId, "Dạ, để đổi món anh chị vui lòng nhắn tin theo cú pháp:\n` /ĐM MaMon Size SoLuong `\n(Ví dụ: `/ĐM TS01 L 1`) để con thay thế món đã hết ạ!");
         }
+
+        // Khách chọn đặt các món còn lại
+        else if ("CUST_KEEP_REST".equals(data)) {
+            AIOrderResponse order = pendingOrders.get(chatId);
+            if (order != null) {
+                // Vì trong OUT_OF_STOCK_ bạn đã dùng removeIf để xóa món hết rồi,
+                // nên giờ chỉ cần hiện lại bảng xác nhận với các món còn lại thôi.
+                showConfirmation(chatId, order);
+            } else {
+                send(chatId, "Dạ đơn hàng cũ không còn hiệu lực, anh chị đặt lại món mới giúp con nhé!");
+            }
+        }
+
+        // Khách hủy đơn
+        else if ("CUST_ABORT".equals(data)) {
+            pendingOrders.remove(chatId);
+            send(chatId, "Dạ con đã hủy đơn. Cảm ơn Anh/chị. Hẹn gặp lại nhé! ❤️");
+        }
+
+        // Khách chọn lại
+        else if ("CUST_RESTART".equals(data)) {
+            pendingOrders.remove(chatId);
+            send(chatId, "Dạ mời anh chị xem lại /menu để chọn món mới ạ.");
+        }else{
+            send(chatId, "Dạ mời anh chị xem lại /menu để chọn món mới ạ.");
+        }
+
     }
-
-    private void sendOrderToMom(String text, AIOrderResponse order) {
-
-        SendMessage msg = new SendMessage();
-
-        msg.setChatId(MOM_CHAT_ID);
-        msg.setText(text);
-
-        InlineKeyboardMarkup markup = new InlineKeyboardMarkup();
-        List<List<InlineKeyboardButton>> rows = new ArrayList<>();
-
-        for (AIOrderItem o : order.getOrders()) {
-
-            InlineKeyboardButton btn = new InlineKeyboardButton();
-
-            btn.setText("❌ Hết món: " + o.getItem());
-            btn.setCallbackData("OUT_OF_STOCK_" + o.getItem());
-
-            rows.add(Collections.singletonList(btn));
-        }
-
-        markup.setKeyboard(rows);
-        msg.setReplyMarkup(markup);
-
+    private void handleReplaceItem(Long chatId, String text) {
         try {
-            execute(msg);
+            String[] parts = text.split("\\s+");
+            if (parts.length < 4) throw new Exception();
+
+            String newId = parts[1];
+            String size = parts[2].toUpperCase();
+            int qty = Integer.parseInt(parts[3]);
+
+            // Kiểm tra món có tồn tại trong menu không
+            if (menuService.find(newId) == null) {
+                send(chatId, "❌ Mã món `" + newId + "` không tồn tại ạ.");
+                return;
+            }
+
+            AIOrderResponse currentOrder = pendingOrders.get(chatId);
+            if (currentOrder == null) {
+                // Nếu lỡ bị null thì tạo mới luôn
+                currentOrder = new AIOrderResponse();
+                currentOrder.setOrders(new ArrayList<>());
+                pendingOrders.put(chatId, currentOrder);
+            }
+
+            // Tạo item mới và thêm vào đơn hàng
+            AIOrderItem newItem = new AIOrderItem();
+            newItem.setItem(newId);
+            newItem.setSize(size);
+            newItem.setQuantity(qty);
+
+            currentOrder.getOrders().add(newItem);
+
+            // Sau khi thêm xong, hiển thị lại bảng xác nhận cho khách chốt đơn mới
+            send(chatId, "🔄 Đã thêm món mới vào đơn cho anh chị rồi ạ:");
+            showConfirmation(chatId, currentOrder);
+
         } catch (Exception e) {
-            e.printStackTrace();
+            send(chatId, "❌ Cú pháp chưa đúng ạ. Anh chị nhắn: `/ĐM TS01 L 1` nhé!");
         }
     }
-
     private void send(Long chatId, String text) {
 
         SendMessage msg = new SendMessage();
@@ -392,5 +528,19 @@ public class MilkTeaBot extends TelegramLongPollingBot {
         }
 
         return sb.toString();
+    }
+    private void sendWithMarkup(Long chatId, String text, InlineKeyboardMarkup markup) {
+        SendMessage msg = new SendMessage();
+        msg.setChatId(chatId.toString());
+        msg.setText(text);
+        msg.setParseMode("Markdown"); // Để in đậm, in nghiêng đẹp hơn
+        msg.setReplyMarkup(markup);
+
+        try {
+            execute(msg);
+        } catch (Exception e) {
+            System.err.println("Lỗi gửi tin nhắn kèm Markup: " + e.getMessage());
+            e.printStackTrace();
+        }
     }
 }
