@@ -366,7 +366,7 @@ public void onUpdateReceived(Update update) {
                 send(chatId,
                         "✅ Em đã báo đơn cho mẹ rồi ạ!");
 
-                pendingOrders.remove(chatId);
+               // pendingOrders.remove(chatId);
             }
         }
 
@@ -384,11 +384,30 @@ public void onUpdateReceived(Update update) {
 
             // 3. Cập nhật tin nhắn bên máy Mẹ: Đổi chữ và XÓA BUTTON
             editMessage(momChatId, messageId, oldText + "\n\n✅ **TRẠNG THÁI: ĐÃ NHẬN ĐƠN**");
+            pendingOrders.remove(chatId);
         }
 
         else if ("MOM_REJECT".equals(data)) {
-            // Mẹ nhấn Hủy đơn
+            // 1. Lấy thông tin tin nhắn hiện tại bên máy Mẹ
+            Long momChatId = chatId;
+            Integer messageId = update.getCallbackQuery().getMessage().getMessageId();
+            String oldText = "";
+
+            // Lấy nội dung text cũ để giữ lại thông tin đơn hàng khi edit
+            if (update.getCallbackQuery().getMessage() instanceof org.telegram.telegrambots.meta.api.objects.Message) {
+                oldText = ((org.telegram.telegrambots.meta.api.objects.Message) update.getCallbackQuery().getMessage()).getText();
+            }
+
+            // 2. Cập nhật tin nhắn bên máy Mẹ: Đổi chữ và XÓA BUTTON
+            editMessage(momChatId, messageId, oldText + "\n\n❌ **TRẠNG THÁI: ĐÃ HỦY ĐƠN/ĐÓNG CỬA**");
+
+            // 3. Báo cho khách hàng
+            // Lưu ý: Nếu bạn dùng 2 máy thật, chỗ này phải dùng ID của khách.
+            // Vì đang Test Mode (MOM_CHAT_ID = chatId) nên gửi trực tiếp cho chatId hiện tại là đúng.
             send(chatId, "😭 Dạ em xin lỗi, hiện tại quán mẹ em đang bận hoặc đã đóng cửa nên không nhận đơn được ạ. Mong anh/chị thông cảm!");
+
+            // 4. Dọn dẹp bộ nhớ
+            pendingOrders.remove(chatId);
         }
 
         else if (data.startsWith("OUT_OF_STOCK_")) {
@@ -458,61 +477,123 @@ public void onUpdateReceived(Update update) {
             }
         }
 
-        // Khách hủy đơn
+        // Khách chọn hủy đơn từ bảng "Xử lý khi hết món"
         else if ("CUST_ABORT".equals(data)) {
+            // 1. Lấy thông tin tin nhắn hiện tại của khách
+            Integer messageId = update.getCallbackQuery().getMessage().getMessageId();
+            String oldText = "";
+            if (update.getCallbackQuery().getMessage() instanceof org.telegram.telegrambots.meta.api.objects.Message) {
+                oldText = ((org.telegram.telegrambots.meta.api.objects.Message) update.getCallbackQuery().getMessage()).getText();
+            }
+
+            // 2. Cập nhật tin nhắn ngay trên màn hình khách: Đổi chữ và XÓA BUTTON
+            editMessage(chatId, messageId, oldText + "\n\n❌ **BẠN ĐÃ HỦY ĐƠN HÀNG NÀY**");
+
+            // 3. Gửi lời chào tạm biệt
+            send(chatId, "Dạ con đã hủy đơn theo ý anh/chị. Cảm ơn Anh/chị đã quan tâm. Hẹn gặp lại nhé! ❤️");
+
+            // 4. Dọn dẹp bộ nhớ
             pendingOrders.remove(chatId);
-            send(chatId, "Dạ con đã hủy đơn. Cảm ơn Anh/chị. Hẹn gặp lại nhé! ❤️");
         }
 
         // Khách chọn lại
         else if ("CUST_RESTART".equals(data)) {
+            Integer messageId = update.getCallbackQuery().getMessage().getMessageId();
+            editMessage(chatId, messageId, "❌ **ĐƠN HÀNG ĐÃ BỊ HỦY BỎ**");
+
+            send(chatId, "Dạ mời anh chị nhắn tin để chọn món mới hoặc xem /menu ạ.");
             pendingOrders.remove(chatId);
-            send(chatId, "Dạ mời anh chị xem lại /menu để chọn món mới ạ.");
         }else{
-            send(chatId, "Dạ mời anh chị xem lại /menu để chọn món mới ạ.");
+            Integer messageId = update.getCallbackQuery().getMessage().getMessageId();
+            editMessage(chatId, messageId, "❌ **ĐƠN HÀNG ĐÃ BỊ HỦY BỎ**");
+
+            send(chatId, "Dạ mời anh chị nhắn tin để chọn món mới hoặc xem /menu ạ.");
+            pendingOrders.remove(chatId);
         }
 
     }
 
-    private void handleReplaceItem(Long chatId, String text) {
-        try {
-            String[] parts = text.split("\\s+");
-            if (parts.length < 4) throw new Exception();
+//    private void handleReplaceItem(Long chatId, String text) {
+//        try {
+//            String[] parts = text.split("\\s+");
+//            if (parts.length < 4) throw new Exception();
+//
+//            String newId = parts[1];
+//            String size = parts[2].toUpperCase();
+//            int qty = Integer.parseInt(parts[3]);
+//
+//            // Kiểm tra món có tồn tại trong menu không
+//            if (menuService.find(newId) == null) {
+//                send(chatId, "❌ Mã món `" + newId + "` không tồn tại ạ.");
+//                return;
+//            }
+//
+//            AIOrderResponse currentOrder = pendingOrders.get(chatId);
+//            if (currentOrder == null) {
+//                // Nếu lỡ bị null thì tạo mới luôn
+//                currentOrder = new AIOrderResponse();
+//                currentOrder.setOrders(new ArrayList<>());
+//                pendingOrders.put(chatId, currentOrder);
+//            }
+//
+//            // Tạo item mới và thêm vào đơn hàng
+//            AIOrderItem newItem = new AIOrderItem();
+//            newItem.setItem(newId);
+//            newItem.setSize(size);
+//            newItem.setQuantity(qty);
+//
+//            currentOrder.getOrders().add(newItem);
+//
+//            // Sau khi thêm xong, hiển thị lại bảng xác nhận cho khách chốt đơn mới
+//            send(chatId, "🔄 Đã thêm món mới vào đơn cho anh chị rồi ạ:");
+//            showConfirmation(chatId, currentOrder);
+//
+//        } catch (Exception e) {
+//            send(chatId, "❌ Cú pháp chưa đúng ạ. Anh chị nhắn: `/ĐM TS01 L 1` nhé!");
+//        }
+//    }
+private void handleReplaceItem(Long chatId, String text) {
+    try {
+        String[] parts = text.split("\\s+");
+        if (parts.length < 4) throw new Exception();
 
-            String newId = parts[1];
-            String size = parts[2].toUpperCase();
-            int qty = Integer.parseInt(parts[3]);
+        String newId = parts[1];
+        String size = parts[2].toUpperCase();
+        int qty = Integer.parseInt(parts[3]);
 
-            // Kiểm tra món có tồn tại trong menu không
-            if (menuService.find(newId) == null) {
-                send(chatId, "❌ Mã món `" + newId + "` không tồn tại ạ.");
-                return;
-            }
-
-            AIOrderResponse currentOrder = pendingOrders.get(chatId);
-            if (currentOrder == null) {
-                // Nếu lỡ bị null thì tạo mới luôn
-                currentOrder = new AIOrderResponse();
-                currentOrder.setOrders(new ArrayList<>());
-                pendingOrders.put(chatId, currentOrder);
-            }
-
-            // Tạo item mới và thêm vào đơn hàng
-            AIOrderItem newItem = new AIOrderItem();
-            newItem.setItem(newId);
-            newItem.setSize(size);
-            newItem.setQuantity(qty);
-
-            currentOrder.getOrders().add(newItem);
-
-            // Sau khi thêm xong, hiển thị lại bảng xác nhận cho khách chốt đơn mới
-            send(chatId, "🔄 Đã thêm món mới vào đơn cho anh chị rồi ạ:");
-            showConfirmation(chatId, currentOrder);
-
-        } catch (Exception e) {
-            send(chatId, "❌ Cú pháp chưa đúng ạ. Anh chị nhắn: `/ĐM TS01 L 1` nhé!");
+        if (menuService.find(newId) == null) {
+            send(chatId, "❌ Mã món `" + newId + "` không tồn tại ạ.");
+            return;
         }
+
+        AIOrderResponse currentOrder = pendingOrders.get(chatId);
+
+        // Nếu đơn hàng bị mất do timeout hoặc xóa nhầm, tạo mới nhưng nhắc khách nhập lại info
+        if (currentOrder == null) {
+            send(chatId, "📌 Đơn hàng cũ đã hết hạn, anh/chị vui lòng đặt lại món mới giúp con nhé!");
+            return;
+        }
+
+        // Tạo item mới
+        AIOrderItem newItem = new AIOrderItem();
+        newItem.setItem(newId);
+        newItem.setSize(size);
+        newItem.setQuantity(qty);
+
+        // QUAN TRỌNG: Thêm món mới vào nhưng KHÔNG làm mất phone/address cũ
+        if (currentOrder.getOrders() == null) {
+            currentOrder.setOrders(new ArrayList<>());
+        }
+        currentOrder.getOrders().add(newItem);
+
+        // Hiển thị lại bảng xác nhận (Lúc này showConfirmation sẽ tự check phone/address của currentOrder)
+        send(chatId, "🔄 Đã cập nhật món mới vào đơn hàng của mình ạ:");
+        showConfirmation(chatId, currentOrder);
+
+    } catch (Exception e) {
+        send(chatId, "❌ Cú pháp chưa đúng ạ. Anh chị nhắn: `/ĐM TS01 L 1` nhé!");
     }
+}
     private void send(Long chatId, String text) {
 
         SendMessage msg = new SendMessage();

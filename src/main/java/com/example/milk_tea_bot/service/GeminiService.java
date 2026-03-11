@@ -81,6 +81,8 @@ public class GeminiService {
         }
         """.formatted(userMessage, menuContext);
         try {
+            System.out.println("ENV KEY = " + System.getenv("GEMINI_API_KEY"));
+            System.out.println("SPRING KEY = " + apiKey);
             Client client = new Client.Builder().apiKey(apiKey).build();
             GenerateContentResponse response = client.models.generateContent("gemini-2.5-flash", prompt, null);
             return response.text();
