@@ -2,7 +2,8 @@
 FROM maven:3.9.5-amazoncorretto-17 AS build
 COPY . .
 # Thêm các cờ để bỏ qua lỗi annotation processor nếu có
-RUN mvn clean package -DskipTests -Dmaven.compiler.proc=none
+RUN mvn clean package -DskipTests -Dmaven.compiler.proc=none -Dmaven.test.skip=true
+
 
 # Bước 2: Chạy ứng dụng
 FROM amazoncorretto:17-al2-jdk
