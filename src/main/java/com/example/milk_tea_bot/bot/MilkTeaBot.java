@@ -18,9 +18,13 @@ import org.telegram.telegrambots.bots.TelegramLongPollingBot;
 import org.telegram.telegrambots.meta.api.methods.ActionType;
 import org.telegram.telegrambots.meta.api.methods.send.SendChatAction;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
+import org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageText;
 import org.telegram.telegrambots.meta.api.objects.Update;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
+import org.telegram.telegrambots.meta.api.objects.replykeyboard.ReplyKeyboardMarkup;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton;
+import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.KeyboardButton;
+import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.KeyboardRow;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -63,47 +67,65 @@ public class MilkTeaBot extends TelegramLongPollingBot {
         return token;
     }
 
-    @Override
-    public void onUpdateReceived(Update update) {
+@Override
+public void onUpdateReceived(Update update) {
+    if (update.hasCallbackQuery()) {
+        Long chatId = update.getCallbackQuery().getMessage().getChatId();
+        handleCallback(chatId, update.getCallbackQuery().getData(), update);
+        return;
+    }
 
-        if (update.hasCallbackQuery()) {
+    if (!update.hasMessage() || !update.getMessage().hasText()) return;
 
-            Long chatId = update.getCallbackQuery().getMessage().getChatId();
-            handleCallback(chatId, update.getCallbackQuery().getData());
+    String text = update.getMessage().getText();
+    Long chatId = update.getMessage().getChatId();
+    MOM_CHAT_ID = chatId.toString();
+
+    // 1. Xử lý lưu Số điện thoại & Địa chỉ theo cú pháp khách nhập
+    if (text.toLowerCase().contains("phone:") || text.toLowerCase().contains("address:")) {
+        handleContactInfo(chatId, text);
+        return;
+    }
+
+    // 2. Các lệnh cơ bản
+    if (text.equalsIgnoreCase("/start")) {
+        send(chatId, "🧋 Chào anh/chị!\n\nQuán mẹ em đang mở cửa.\nXem menu bằng /menu\nHoặc nhắn để đặt món nhé 😊");
+    } else if (text.equalsIgnoreCase("/menu")) {
+        send(chatId, getMenuText());
+    } else if (text.startsWith("/ĐM")) {
+        handleReplaceItem(chatId, text);
+    } else {
+        // Xử lý đặt món qua AI
+        handleAIOrder(chatId, text);
+    }
+}
+    private void handleContactInfo(Long chatId, String text) {
+        AIOrderResponse order = pendingOrders.get(chatId);
+        if (order == null) {
+            send(chatId, "📌 Anh/chị vui lòng chọn món trước khi nhập địa chỉ nhé!");
             return;
         }
 
-        if (!update.hasMessage() || !update.getMessage().hasText()) return;
+        String[] lines = text.split("\n|,");
+        for (String line : lines) {
+            String content = line.trim();
+            if (content.toLowerCase().startsWith("phone:")) {
+                order.setPhone(content.substring(6).trim());
+            }
+            if (content.toLowerCase().startsWith("address:")) {
+                order.setAddress(content.substring(8).trim());
+            }
+        }
 
-        String text = update.getMessage().getText();
-        Long chatId = update.getMessage().getChatId();
-
-        // TEST MODE
-        MOM_CHAT_ID = chatId.toString();
-
-        if (text.equalsIgnoreCase("/start")) {
-
-            send(chatId,
-                    "🧋 Chào anh/chị!\n\n"
-                            + "Quán mẹ em đang mở cửa.\n"
-                            + "Xem menu bằng /menu\n"
-                            + "Hoặc nhắn để đặt món nhé 😊");
-
-        } else if (text.equalsIgnoreCase("/menu")) {
-
-            send(chatId, getMenuText());
-
-        }else if (text.startsWith("/ĐM")) {
-
-            handleReplaceItem(chatId, text);
-
+        // Kiểm tra nếu khách đã cung cấp đủ cả 2 thông tin thì mới hiện bảng xác nhận đơn
+        if (order.getPhone() != null && order.getAddress() != null) {
+            send(chatId, "✅ Đã ghi nhận thông tin giao hàng!");
+            showConfirmation(chatId, order); // <--- BÂY GIỜ MỚI HIỆN BẢNG XÁC NHẬN
         } else {
-
-            handleAIOrder(chatId, text);
-
+            send(chatId, "Dạ con đã nhận được một phần thông tin. Anh/chị bổ sung nốt "
+                    + (order.getPhone() == null ? "Số điện thoại (Phone:)" : "Địa chỉ (Address:)") + " để con lên đơn nhé!");
         }
     }
-
     private void handleAIOrder(Long chatId, String text) {
 
         try {
@@ -150,7 +172,7 @@ public class MilkTeaBot extends TelegramLongPollingBot {
                     if (res.getOrders() != null && !res.getOrders().isEmpty()) {
 
                         pendingOrders.put(chatId, res);
-                        showConfirmation(chatId, res);
+                       // showConfirmation(chatId, res);
                     }
 
                 } catch (Exception ex) {
@@ -193,7 +215,10 @@ public class MilkTeaBot extends TelegramLongPollingBot {
 
         sb.append("🧋 *ĐƠN HÀNG CỦA ANH/CHỊ*\n");
         sb.append("━━━━━━━━━━━━━━\n\n");
-
+        // Hiển thị thông tin giao hàng nếu có
+        if (res.getPhone() != null) sb.append("📱 SĐT: ").append(res.getPhone()).append("\n");
+        if (res.getAddress() != null) sb.append("📍 ĐC: ").append(res.getAddress()).append("\n");
+        sb.append("━━━━━━━━━━━━━━\n\n");
         int grandTotal = 0;
 
         for (AIOrderItem o : res.getOrders()) {
@@ -295,9 +320,10 @@ public class MilkTeaBot extends TelegramLongPollingBot {
             e.printStackTrace();
         }
     }
-    private void handleCallback(Long chatId, String data) {
+    private void handleCallback(Long chatId, String data,Update update) {
         // Luồng cho khách hàng xác nhận đơn
         if ("CONFIRM_YES".equals(data)) {
+            // Không remove đơn ngay, giữ lại để lát nữa lấy kèm SĐT/Địa chỉ
             AIOrderResponse order = pendingOrders.get(chatId);
             if (order != null) {
 
@@ -306,7 +332,8 @@ public class MilkTeaBot extends TelegramLongPollingBot {
                 momMsg.append("🚨 ĐƠN MỚI\n");
                 momMsg.append("━━━━━━━━━━━━━━\n");
                 momMsg.append("Khách: ").append(chatId).append("\n\n");
-
+                momMsg.append("📱 SĐT: ").append(order.getPhone()).append("\n");
+                momMsg.append("📍 ĐC: ").append(order.getAddress()).append("\n\n");
                 int total = 0;
 
                 for (AIOrderItem o : order.getOrders()) {
@@ -339,15 +366,24 @@ public class MilkTeaBot extends TelegramLongPollingBot {
                 send(chatId,
                         "✅ Em đã báo đơn cho mẹ rồi ạ!");
 
-             //   pendingOrders.remove(chatId);
+                pendingOrders.remove(chatId);
             }
         }
 
         // Luồng cho Mẹ xử lý đơn
         else if (data.startsWith("MOM_ACCEPT_")) {
-            // Mẹ nhấn Nhận đơn -> Báo cho khách (Lưu ý: Bạn cần lưu lại chatId của khách)
-            // Ở đây giả định bạn đang test gửi lại chính mình, nếu thực tế cần lấy từ Object Order
+            // 1. Lấy thông tin tin nhắn cũ
+            Long momChatId = chatId; // ID của Mẹ
+            Integer messageId = update.getCallbackQuery().getMessage().getMessageId();
+            String oldText = "";
+            if (update.getCallbackQuery().getMessage() instanceof org.telegram.telegrambots.meta.api.objects.Message) {
+                oldText = ((org.telegram.telegrambots.meta.api.objects.Message) update.getCallbackQuery().getMessage()).getText();
+            }
+            // 2. Báo cho khách hàng (Giả định bạn có cách lấy chatId khách, ở đây dùng tạm chatId vì đang test 1 mình)
             send(chatId, "🥰 Dạ mẹ em đã nhận đơn và đang làm rồi ạ! Anh/chị đợi xíu nhé.");
+
+            // 3. Cập nhật tin nhắn bên máy Mẹ: Đổi chữ và XÓA BUTTON
+            editMessage(momChatId, messageId, oldText + "\n\n✅ **TRẠNG THÁI: ĐÃ NHẬN ĐƠN**");
         }
 
         else if ("MOM_REJECT".equals(data)) {
@@ -437,6 +473,7 @@ public class MilkTeaBot extends TelegramLongPollingBot {
         }
 
     }
+
     private void handleReplaceItem(Long chatId, String text) {
         try {
             String[] parts = text.split("\\s+");
@@ -540,6 +577,20 @@ public class MilkTeaBot extends TelegramLongPollingBot {
             execute(msg);
         } catch (Exception e) {
             System.err.println("Lỗi gửi tin nhắn kèm Markup: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+    private void editMessage(Long chatId, Integer messageId, String newText) {
+        EditMessageText edit = new EditMessageText();
+        edit.setChatId(chatId.toString());
+        edit.setMessageId(messageId);
+        edit.setText(newText);
+        edit.setParseMode("Markdown");
+        edit.setReplyMarkup(null); // Xóa bỏ toàn bộ các nút bấm (Nhận đơn, Hủy, Hết món)
+
+        try {
+            execute(edit);
+        } catch (Exception e) {
             e.printStackTrace();
         }
     }
