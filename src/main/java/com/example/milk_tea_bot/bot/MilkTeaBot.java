@@ -379,7 +379,7 @@ public void onUpdateReceived(Update update) {
             if (update.getCallbackQuery().getMessage() instanceof org.telegram.telegrambots.meta.api.objects.Message) {
                 oldText = ((org.telegram.telegrambots.meta.api.objects.Message) update.getCallbackQuery().getMessage()).getText();
             }
-            // 2. Báo cho khách hàng (Giả định bạn có cách lấy chatId khách, ở đây dùng tạm chatId vì đang test 1 mình)
+            // 2. Báo cho khách hàng (Giả định có cách lấy chatId khách, ở đây dùng tạm chatId vì đang test 1 mình)
             send(chatId, "🥰 Dạ mẹ em đã nhận đơn và đang làm rồi ạ! Anh/chị đợi xíu nhé.");
 
             // 3. Cập nhật tin nhắn bên máy Mẹ: Đổi chữ và XÓA BUTTON
@@ -402,7 +402,7 @@ public void onUpdateReceived(Update update) {
             editMessage(momChatId, messageId, oldText + "\n\n❌ **TRẠNG THÁI: ĐÃ HỦY ĐƠN/ĐÓNG CỬA**");
 
             // 3. Báo cho khách hàng
-            // Lưu ý: Nếu bạn dùng 2 máy thật, chỗ này phải dùng ID của khách.
+            // Lưu ý: Nếu dùng 2 máy thật, chỗ này phải dùng ID của khách.
             // Vì đang Test Mode (MOM_CHAT_ID = chatId) nên gửi trực tiếp cho chatId hiện tại là đúng.
             send(chatId, "😭 Dạ em xin lỗi, hiện tại quán mẹ em đang bận hoặc đã đóng cửa nên không nhận đơn được ạ. Mong anh/chị thông cảm!");
 
@@ -469,7 +469,7 @@ public void onUpdateReceived(Update update) {
         else if ("CUST_KEEP_REST".equals(data)) {
             AIOrderResponse order = pendingOrders.get(chatId);
             if (order != null) {
-                // Vì trong OUT_OF_STOCK_ bạn đã dùng removeIf để xóa món hết rồi,
+                // Vì trong OUT_OF_STOCK_ đã dùng removeIf để xóa món hết rồi,
                 // nên giờ chỉ cần hiện lại bảng xác nhận với các món còn lại thôi.
                 showConfirmation(chatId, order);
             } else {
@@ -513,45 +513,6 @@ public void onUpdateReceived(Update update) {
 
     }
 
-//    private void handleReplaceItem(Long chatId, String text) {
-//        try {
-//            String[] parts = text.split("\\s+");
-//            if (parts.length < 4) throw new Exception();
-//
-//            String newId = parts[1];
-//            String size = parts[2].toUpperCase();
-//            int qty = Integer.parseInt(parts[3]);
-//
-//            // Kiểm tra món có tồn tại trong menu không
-//            if (menuService.find(newId) == null) {
-//                send(chatId, "❌ Mã món `" + newId + "` không tồn tại ạ.");
-//                return;
-//            }
-//
-//            AIOrderResponse currentOrder = pendingOrders.get(chatId);
-//            if (currentOrder == null) {
-//                // Nếu lỡ bị null thì tạo mới luôn
-//                currentOrder = new AIOrderResponse();
-//                currentOrder.setOrders(new ArrayList<>());
-//                pendingOrders.put(chatId, currentOrder);
-//            }
-//
-//            // Tạo item mới và thêm vào đơn hàng
-//            AIOrderItem newItem = new AIOrderItem();
-//            newItem.setItem(newId);
-//            newItem.setSize(size);
-//            newItem.setQuantity(qty);
-//
-//            currentOrder.getOrders().add(newItem);
-//
-//            // Sau khi thêm xong, hiển thị lại bảng xác nhận cho khách chốt đơn mới
-//            send(chatId, "🔄 Đã thêm món mới vào đơn cho anh chị rồi ạ:");
-//            showConfirmation(chatId, currentOrder);
-//
-//        } catch (Exception e) {
-//            send(chatId, "❌ Cú pháp chưa đúng ạ. Anh chị nhắn: `/ĐM TS01 L 1` nhé!");
-//        }
-//    }
 private void handleReplaceItem(Long chatId, String text) {
     try {
         String[] parts = text.split("\\s+");
